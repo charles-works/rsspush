@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+.github
+.omx
+
+# 开发文件
+node_modules
+nodemon.json
+*.log
+*.bak
+
+# 文档
+README.md
+CHANGELOG.md
+LICENSE
+docs
+*.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 测试
+test
+tests
+__tests__
+*.test.js
+*.spec.js
+coverage
+.nyc_output

@@ -1,0 +1,13 @@
+[
+  {
+    "id": "example123",
+    "title": "示例 RSS 源",
+    "link": "https://example.com",
+    "feed": "https://example.com/rss",
+    "keys": "YOUR_NOTIFICATION_KEY",
+    "minutes": "30",
+    "keyword": "",
+    "bad_keyword": "",
+    "translate": "-1"
+  }
+]

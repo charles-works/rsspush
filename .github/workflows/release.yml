@@ -1,0 +1,223 @@
+# ============================================================
+# GitHub Actions: 构建并发布到 GitHub Releases
+# ============================================================
+# 触发条件:
+#   - 推送标签 (v*)
+#   - 手动触发
+# ============================================================
+
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a pre-release?'
+        required: false
+        type: boolean
+        default: false
+
+# 权限配置
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 设置 Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # 3. 安装依赖
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. 构建前端（如果有的话）
+      - name: Build frontend (if exists)
+        run: |
+          if [ -f "package.json" ] && grep -q '"build"' package.json; then
+            echo "Running build script..."
+            npm run build || echo "No build script found, skipping"
+          else
+            echo "No build script, skipping frontend build"
+          fi
+
+      # 5. 清理不必要的文件
+      - name: Clean up for release
+        run: |
+          # 删除开发文件
+          rm -rf .git .github .omx node_modules
+          rm -f err-*.log taskProcessor.js.bak
+          
+          # 保留的文件列表
+          echo "## Release Contents" > release-contents.md
+          echo '```' >> release-contents.md
+          find . -type f | sort >> release-contents.md
+          echo '```' >> release-contents.md
+
+      # 6. 创建发布包（tar.gz 和 zip）
+      - name: Create release archives
+        run: |
+          # 获取版本号
+          VERSION="${{ github.ref_name }}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
+            VERSION="${{ inputs.tag }}"
+          fi
+          
+          # 创建目录
+          RELEASE_DIR="rsspush-api-${VERSION}"
+          mkdir -p "$RELEASE_DIR"
+          
+          # 复制文件
+          cp -r app.js taskProcessor.js cron.js cron.after.js cron.task-split.js "$RELEASE_DIR/"
+          cp -r config.yaml image.version.txt package.json package-lock.json yarn.lock "$RELEASE_DIR/"
+          cp -r build data "$RELEASE_DIR/"
+          
+          # 创建 tar.gz
+          tar -czf "${RELEASE_DIR}.tar.gz" "$RELEASE_DIR"
+          
+          # 创建 zip
+          zip -r "${RELEASE_DIR}.zip" "$RELEASE_DIR"
+          
+          # 计算校验和
+          sha256sum "${RELEASE_DIR}.tar.gz" > "${RELEASE_DIR}.tar.gz.sha256"
+          sha256sum "${RELEASE_DIR}.zip" > "${RELEASE_DIR}.zip.sha256"
+          
+          # 保存版本号
+          echo "$VERSION" > RELEASE_VERSION
+
+      # 7. 上传构建产物
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            rsspush-api-*.tar.gz
+            rsspush-api-*.zip
+            *.sha256
+            release-contents.md
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      # 1. 下载构建产物
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: ./artifacts
+
+      # 2. 读取版本号
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(cat ./artifacts/RELEASE_VERSION)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "## Release Version: $VERSION" >> $GITHUB_STEP_SUMMARY
+
+      # 3. 生成 Release Notes
+      - name: Generate release notes
+        id: notes
+        run: |
+          # 获取上一个 tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          # 生成变更日志
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD --no-merges | head -50)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges | head -50)
+          fi
+          
+          # 写入文件
+          cat > release-notes.md << NOTES
+          ## 🚀 RSSPush API ${{ steps.version.outputs.version }}
+          
+          ### 📦 安装方式
+          
+          **Docker:**
+          \`\`\`bash
+          docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
+          docker run -d -p 8000:8000 ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
+          \`\`\`
+          
+          **手动安装:**
+          \`\`\`bash
+          # 下载并解压
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/rsspush-api-${{ steps.version.outputs.version }}.tar.gz
+          tar -xzf rsspush-api-${{ steps.version.outputs.version }}.tar.gz
+          cd rsspush-api-${{ steps.version.outputs.version }}
+          
+          # 安装依赖
+          npm install --production
+          
+          # 启动
+          node app.js
+          \`\`\`
+          
+          ### 📝 更新日志
+          
+          $CHANGELOG
+          
+          ### 📦 构建产物
+          
+          | 文件 | 说明 |
+          |------|------|
+          | \`rsspush-api-${{ steps.version.outputs.version }}.tar.gz\` | Linux/macOS 压缩包 |
+          | \`rsspush-api-${{ steps.version.outputs.version }}.zip\` | Windows 压缩包 |
+          | \`*.sha256\` | SHA256 校验和 |
+          
+          ### 🐳 Docker 镜像
+          
+          \`\`\`bash
+          # GitHub Container Registry
+          docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
+          
+          # Latest
+          docker pull ghcr.io/${{ github.repository }}:latest
+          \`\`\`
+          NOTES
+
+      # 4. 创建 GitHub Release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "RSSPush API ${{ steps.version.outputs.version }}"
+          body_path: ./release-notes.md
+          draft: false
+          prerelease: ${{ inputs.prerelease || false }}
+          files: |
+            ./artifacts/rsspush-api-*.tar.gz
+            ./artifacts/rsspush-api-*.zip
+            ./artifacts/*.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 5. 输出 Release 信息
+      - name: Release summary
+        run: |
+          echo "## ✅ Release Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,38 @@
+notifications:
+  # --- 推送到企业微信群机器人 ---
+  # - id: wecom_bot
+  #   type: wecom_bot
+  #   # 替换为你的机器人webhook地址
+  #   webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY"
+  #   msg_template: |
+  #     新推文：{{.Entry.Title}}
+  #     链接：{{.Entry.Link}}
+  #     内容：{{.Entry.Content | truncate 100}}
+
+  # --- 推送到钉钉群机器人 ---
+  - id: dingtalk_bot
+    type: dingtalk
+    # 替换为你的机器人webhook地址
+    webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_ACCESS_TOKEN"
+    msg_type: markdown
+    title_template: "Twitter 更新|X-BOT"
+    text_template: |
+      X-BOT ==> 
+      ## [{{.Entry.Author}}]({{.Entry.Link}})
+      {{.Entry.Content | truncate 200}}
+
+  # --- 推送到QQ邮箱 ---
+  # - id: email_notify
+  #   type: email
+  #   smtp_host: smtp.qq.com
+  #   smtp_port: 465
+  #   smtp_ssl: true
+  #   # 替换为你的QQ邮箱和SMTP授权码
+  #   from_email: "你的QQ号@qq.com"
+  #   from_password: "你的SMTP授权码"
+  #   to_email: "接收通知的邮箱@example.com"
+  #   subject_template: "Twitter新消息: {{.Entry.Author}}"
+  #   body_template: |
+  #     来自 {{.Entry.Author}} 的推文：
+  #     {{.Entry.Content}}
+  #     链接：{{.Entry.Link}}
