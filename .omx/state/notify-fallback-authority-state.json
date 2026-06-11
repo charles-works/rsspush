@@ -1,0 +1,14 @@
+{
+  "owner": "hud",
+  "pid": 235290,
+  "cwd": "/home/charles/hd_work/DEV_PROJECT/rsspush/api",
+  "heartbeat_at": "2026-06-11T07:35:05.637Z",
+  "cooldown_ms": 5000,
+  "jitter_ms": 0,
+  "skip_count": 940,
+  "last_status": "skipped",
+  "last_reason": "rate_limited",
+  "last_spawn_at": "2026-06-11T07:35:04.636Z",
+  "last_skip_at": "2026-06-11T07:35:05.637Z",
+  "next_allowed_at": "2026-06-11T07:35:09.636Z"
+}

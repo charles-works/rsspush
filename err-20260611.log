@@ -1,0 +1,46 @@
+url https://nitter.privacyredirect.com/aleabitoreddit/rss
+Error: Unable to parse XML.
+    at /rsspush/api/node_modules/rss-parser/lib/parser.js:36:25
+    at Parser.<anonymous> (/rsspush/api/node_modules/xml2js/lib/parser.js:304:18)
+    at Parser.emit (node:events:513:28)
+    at Parser.exports.Parser.Parser.parseString (/rsspush/api/node_modules/xml2js/lib/parser.js:314:16)
+    at Parser.parseString (/rsspush/api/node_modules/xml2js/lib/parser.js:5:59)
+    at /rsspush/api/node_modules/rss-parser/lib/parser.js:33:22
+    at new Promise (<anonymous>)
+    at Parser.parseString (/rsspush/api/node_modules/rss-parser/lib/parser.js:32:16)
+    at IncomingMessage.<anonymous> (/rsspush/api/node_modules/rss-parser/lib/parser.js:96:23)
+    at IncomingMessage.emit (node:events:525:35)
+Error: Unable to parse XML.
+    at /rsspush/api/node_modules/rss-parser/lib/parser.js:36:25
+    at Parser.<anonymous> (/rsspush/api/node_modules/xml2js/lib/parser.js:304:18)
+    at Parser.emit (node:events:513:28)
+    at Parser.exports.Parser.Parser.parseString (/rsspush/api/node_modules/xml2js/lib/parser.js:314:16)
+    at Parser.parseString (/rsspush/api/node_modules/xml2js/lib/parser.js:5:59)
+    at /rsspush/api/node_modules/rss-parser/lib/parser.js:33:22
+    at new Promise (<anonymous>)
+    at Parser.parseString (/rsspush/api/node_modules/rss-parser/lib/parser.js:32:16)
+    at IncomingMessage.<anonymous> (/rsspush/api/node_modules/rss-parser/lib/parser.js:96:23)
+    at IncomingMessage.emit (node:events:525:35)
+Processing task Serenity (@aleabitoreddit) / Twitter
+发送结果 { code: 0, message: 'sent to apprise' }
+stdout:
+Processing task Serenity / @aleabitoreddit
+发送结果 { code: 0, message: 'sent to apprise' }
+stdout:
+Error: Unable to parse XML.
+    at /rsspush/api/node_modules/rss-parser/lib/parser.js:36:25
+    at Parser.<anonymous> (/rsspush/api/node_modules/xml2js/lib/parser.js:304:18)
+    at Parser.emit (node:events:513:28)
+    at Parser.exports.Parser.Parser.parseString (/rsspush/api/node_modules/xml2js/lib/parser.js:314:16)
+    at Parser.parseString (/rsspush/api/node_modules/xml2js/lib/parser.js:5:59)
+    at /rsspush/api/node_modules/rss-parser/lib/parser.js:33:22
+    at new Promise (<anonymous>)
+    at Parser.parseString (/rsspush/api/node_modules/rss-parser/lib/parser.js:32:16)
+    at IncomingMessage.<anonymous> (/rsspush/api/node_modules/rss-parser/lib/parser.js:96:23)
+    at IncomingMessage.emit (node:events:525:35)
+Processing task Serenity / @aleabitoreddit
+发送结果 { code: 0, message: 'sent to apprise' }
+stdout:
+Processing task 秋生trader / @Hoyooyoo
+发送结果 { code: 0, message: 'sent to apprise' }
+stdout:
