@@ -25,7 +25,7 @@ RUN npm ci --omit=dev
 
 # 复制应用代码
 COPY app.js taskProcessor.js cron.js cron.after.js cron.task-split.js ./
-COPY config.yaml image.version.txt ./
+COPY config.yaml.example image.version.txt ./
 COPY build/ ./build/
 
 # 创建数据目录
