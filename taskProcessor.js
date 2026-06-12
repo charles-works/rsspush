@@ -8,6 +8,38 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 
+
+// 解析 shell 命令字符串为参数数组，正确处理引号内的空格
+function parseShellArgs(str) {
+    const args = [];
+    let current = '';
+    let inQuote = false;
+    let quoteChar = '';
+    for (let i = 0; i < str.length; i++) {
+        const ch = str[i];
+        if (inQuote) {
+            if (ch === quoteChar) {
+                inQuote = false;
+            } else {
+                current += ch;
+            }
+        } else if (ch === '"' || ch === "'") {
+            inQuote = true;
+            quoteChar = ch;
+        } else if (ch === ' ') {
+            if (current) {
+                args.push(current);
+                current = '';
+            }
+        } else {
+            current += ch;
+        }
+    }
+    if (current) args.push(current);
+    return args;
+}
+
+
 // ============================================================
 // 错误处理增强：错误分类、延迟重试、失败通知、去重
 // ============================================================
@@ -415,35 +447,21 @@ async function processTask(task, isTest = false) {
                         ret = { "code": 9, "message": "webhook " + error };
                     }
                 } else if (skey.toLowerCase().substring(0, 12) == "apprise:raw ") {
-                    const cmd = 'apprise ' + skey.substring(12) + ' -t "' + title.replace(/"/g, '\\"') + '" -b "' + (last.content || '').replace(/"/g, '\\"') + '"';
                     ret = { "code": 0, "message": "sent to apprise" };
-                    const { exec } = require("child_process");
-                    exec(cmd, (error, stdout, stderr) => {
-                        if (error) {
-                            console.log('error: ' + error.message);
-                            return;
-                        }
-                        if (stderr) {
-                            console.log('stderr: ' + stderr);
-                            return;
-                        }
-                        console.log('stdout: ' + stdout);
-                    });
+                    const { spawn } = require("child_process");
+                    const rawArgs = parseShellArgs(skey.substring(12));
+                    const child = spawn('apprise', [...rawArgs, '-t', title, '-b', last.content || '']);
+                    child.stdout.on('data', (data) => console.log('stdout: ' + data));
+                    child.stderr.on('data', (data) => console.log('stderr: ' + data));
+                    child.on('error', (error) => console.log('error: ' + error.message));
                 } else if (skey.toLowerCase().substring(0, 8) == "apprise ") {
-                    const cmd = skey + ' -t "' + title.replace(/"/g, '\\"') + '" -b "' + desp.replace(/"/g, '\\"') + '"';
                     ret = { "code": 0, "message": "sent to apprise" };
-                    const { exec } = require("child_process");
-                    exec(cmd, (error, stdout, stderr) => {
-                        if (error) {
-                            console.log('error: ' + error.message);
-                            return;
-                        }
-                        if (stderr) {
-                            console.log('stderr: ' + stderr);
-                            return;
-                        }
-                        console.log('stdout: ' + stdout);
-                    });
+                    const { spawn } = require("child_process");
+                    const appriseArgs = parseShellArgs(skey.substring(8));
+                    const child = spawn('apprise', [...appriseArgs, '-t', title, '-b', desp]);
+                    child.stdout.on('data', (data) => console.log('stdout: ' + data));
+                    child.stderr.on('data', (data) => console.log('stderr: ' + data));
+                    child.on('error', (error) => console.log('error: ' + error.message));
                 }
 
                 console.log("发送结果", ret);
