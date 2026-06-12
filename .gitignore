@@ -37,6 +37,7 @@ logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+err*.log
 
 # 测试覆盖率
 coverage/
@@ -49,3 +50,4 @@ coverage/
 config.yaml
 data/tasks.json
 *.local
+err*.log
