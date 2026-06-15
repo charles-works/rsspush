@@ -75,8 +75,25 @@ setInterval(() => {
 }, CACHE_CLEANUP_INTERVAL);
 
 // 延迟重试配置
-const RETRY_DELAY_MS = 8000; // 8 秒延迟
-const MAX_RETRIES = 1; // 最多重试 1 次
+// 从环境变量 RETRY_INTERVALS 解析重试间隔（逗号分隔秒数），默认 10s,30s,60s,300s,600s
+const DEFAULT_RETRY_INTERVALS_SEC = [10, 30, 60, 300, 600];
+function parseRetryIntervals() {
+    const env = process.env.RETRY_INTERVALS;
+    if (!env) return DEFAULT_RETRY_INTERVALS_SEC.map(s => s * 1000);
+    try {
+        const parsed = env.split(',').map(s => parseInt(s.trim(), 10));
+        if (parsed.some(isNaN) || parsed.length === 0) {
+            console.warn('[Retry] RETRY_INTERVALS 格式错误，使用默认值');
+            return DEFAULT_RETRY_INTERVALS_SEC.map(s => s * 1000);
+        }
+        return parsed.map(s => s * 1000);
+    } catch (e) {
+        console.warn('[Retry] RETRY_INTERVALS 解析失败，使用默认值:', e.message);
+        return DEFAULT_RETRY_INTERVALS_SEC.map(s => s * 1000);
+    }
+}
+const RETRY_INTERVALS_MS = parseRetryIntervals();
+const MAX_RETRIES = RETRY_INTERVALS_MS.length; // 重试次数 = 间隔数组长度
 
 /**
  * 错误分类器
@@ -200,55 +217,92 @@ function shouldNotify(taskId) {
 
 /**
  * 发送失败通知（通过 DingTalk webhook）
+/**
+ * 发送失败通知（通过所有 task.keys 通道，和成功推送一致）
  */
-async function sendFailureNotification(task, errorType, error) {
+async function sendFailureNotification(task, errorType, error, retrySummary) {
     // 检查去重
     if (!shouldNotify(task.id)) {
         return { code: 0, message: '已通知过，跳过' };
     }
 
-    const title = '⚠️ RSS任务失败通知';
+    // 构建完整重试摘要消息
+    const title = '⚠️ RSS任务失败通知（' + (retrySummary ? retrySummary.totalAttempts : 1) + '次尝试均失败）';
     const errorLabel = getErrorTypeLabel(errorType);
-    const message = [
-        '**任务名称**: ' + task.title,
-        '**错误类型**: ' + errorLabel,
-        '**错误信息**: ' + (error.message || String(error)),
-        '**RSS源**: ' + task.feed,
-        '**时间**: ' + dayjs().format('YYYY-MM-DD HH:mm:ss'),
-        '',
-        '任务已跳过，请检查RSS源是否可用。'
-    ].join('\n');
+    const durationSec = retrySummary ? Math.round(retrySummary.totalDurationMs / 1000) : 0;
 
-    // 从 task.keys 中获取 DingTalk webhook
+    let messageLines = [
+        '**任务名称**: ' + task.title,
+        '**RSS源**: ' + task.feed,
+        '**总尝试次数**: ' + (retrySummary ? retrySummary.totalAttempts : 1) + ' 次',
+        '**总耗时**: ' + durationSec + ' 秒',
+        '',
+        '**重试详情**:'
+    ];
+
+    if (retrySummary && retrySummary.attemptLog) {
+        for (const a of retrySummary.attemptLog) {
+            messageLines.push('  第 ' + a.attempt + ' 次: [' + getErrorTypeLabel(a.errorType) + '] ' + a.message);
+        }
+    } else {
+        messageLines.push('  第 1 次: [' + errorLabel + '] ' + (error.message || String(error)));
+    }
+
+    messageLines.push('');
+    messageLines.push('**最后错误**: [' + errorLabel + '] ' + (retrySummary ? retrySummary.lastError : (error.message || String(error))));
+    messageLines.push('');
+    messageLines.push('任务已跳过，请检查RSS源是否可用。');
+
+    const titlePlain = title.replace(/[\*]/g, '');
+    const desp = messageLines.join('\n');
+
+    // 遍历 task.keys 所有通道发送通知（和成功推送一致）
     const keys = task.keys ? task.keys.split("\n").map(item => item.trim()) : [];
-    
-    for (const skey of keys) {
-        if (skey.toLowerCase().substring(0, 4) === "http") {
+    const unique_keys = [...new Set(keys)];
+    const results = [];
+
+    for (const skey of unique_keys) {
+        let ret = { "code": -1, "message": "unknown key type" };
+
+        if (skey.toLowerCase().substring(0, 3) == "sct") {
+            ret = await sc_send(titlePlain, desp, titlePlain.substring(0, 64), String(skey).trim());
+        } else if (skey.toLowerCase().substring(0, 4) == "http") {
             try {
                 const form = new FormData();
                 form.append('task_id', task.id);
                 form.append('task_title', task.title);
-                form.append('text', title);
-                form.append('title', title);
+                form.append('text', titlePlain);
+                form.append('title', titlePlain);
                 form.append('link', task.feed);
-                form.append('desp', message);
-
-                const response = await fetch(skey, {
-                    method: 'POST',
-                    body: form
-                });
-                const ret = await response.json();
-                console.log('失败通知发送结果:', ret);
-                return ret;
+                form.append('desp', desp);
+                const response = await fetch(skey, { method: 'POST', body: form });
+                ret = await response.json();
             } catch (err) {
-                console.error('发送失败通知出错:', err.message);
-                return { code: 9, message: '通知发送失败: ' + err.message };
+                ret = { "code": 9, "message": "webhook " + err.message };
             }
+        } else if (skey.toLowerCase().substring(0, 12) == "apprise:raw ") {
+            const { spawn } = require("child_process");
+            const rawArgs = parseShellArgs(skey.substring(12));
+            const child = spawn('apprise', [...rawArgs, '-t', titlePlain, '-b', desp]);
+            child.stdout.on('data', (data) => console.log('stdout: ' + data));
+            child.stderr.on('data', (data) => console.log('stderr: ' + data));
+            child.on('error', (error) => console.log('error: ' + error.message));
+            ret = { "code": 0, "message": "sent to apprise" };
+        } else if (skey.toLowerCase().substring(0, 8) == "apprise ") {
+            const { spawn } = require("child_process");
+            const appriseArgs = parseShellArgs(skey.substring(8));
+            const child = spawn('apprise', [...appriseArgs, '-t', titlePlain, '-b', desp]);
+            child.stdout.on('data', (data) => console.log('stdout: ' + data));
+            child.stderr.on('data', (data) => console.log('stderr: ' + data));
+            child.on('error', (error) => console.log('error: ' + error.message));
+            ret = { "code": 0, "message": "sent to apprise" };
         }
+
+        console.log('失败通知发送结果:', skey.substring(0, 20) + '...', ret);
+        results.push({ skey: skey.substring(0, 30), result: ret });
     }
 
-    console.log('未找到可用的 webhook 地址，跳过通知');
-    return { code: -1, message: '未找到 webhook' };
+    return results;
 }
 
 /**
@@ -264,13 +318,16 @@ function delay(ms) {
 async function parseRSSWithRetry(parser, feedUrl, taskTitle) {
     let lastError = null;
     let errorType = null;
+    const attemptLog = []; // 记录每次尝试的错误信息
+    const startTime = Date.now();
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
             // 如果是重试，先延迟
             if (attempt > 0) {
-                console.log('[' + taskTitle + '] 第 ' + attempt + ' 次重试，等待 ' + (RETRY_DELAY_MS / 1000) + ' 秒...');
-                await delay(RETRY_DELAY_MS);
+                const waitMs = RETRY_INTERVALS_MS[attempt - 1] || RETRY_INTERVALS_MS[RETRY_INTERVALS_MS.length - 1];
+                console.log('[' + taskTitle + '] 第 ' + attempt + ' 次重试，等待 ' + (waitMs / 1000) + ' 秒...');
+                await delay(waitMs);
             }
 
             const feed = await parser.parseURL(feedUrl);
@@ -286,6 +343,7 @@ async function parseRSSWithRetry(parser, feedUrl, taskTitle) {
         } catch (error) {
             lastError = error;
             errorType = classifyError(error);
+            attemptLog.push({ attempt: attempt + 1, errorType, message: error.message });
             console.log('[' + taskTitle + '] 尝试 ' + (attempt + 1) + '/' + (MAX_RETRIES + 1) + ' 失败: [' + errorType + '] ' + error.message);
 
             // 如果是最后一次尝试，不再重试
@@ -295,11 +353,18 @@ async function parseRSSWithRetry(parser, feedUrl, taskTitle) {
         }
     }
 
-    // 所有重试都失败
+    // 所有重试都失败，返回完整重试摘要
+    const totalDuration = Date.now() - startTime;
     return { 
         success: false, 
         error: lastError, 
-        errorType: errorType || ErrorType.UNKNOWN 
+        errorType: errorType || ErrorType.UNKNOWN,
+        retrySummary: {
+            totalAttempts: attemptLog.length,
+            attemptLog,
+            totalDurationMs: totalDuration,
+            lastError: lastError ? lastError.message : String(lastError)
+        }
     };
 }
 
@@ -339,11 +404,11 @@ async function processTask(task, isTest = false) {
 
         if (!parseResult.success) {
             // 解析失败，记录错误并发送通知
-            const { error, errorType } = parseResult;
+            const { error, errorType, retrySummary } = parseResult;
             logError(task.title, errorType, error, task.feed);
             
-            // 发送失败通知（带去重）
-            await sendFailureNotification(task, errorType, error);
+            // 发送失败通知（带去重，通过所有 task.keys 通道）
+            await sendFailureNotification(task, errorType, error, retrySummary);
 
             // 更新任务状态（标记为失败，但不阻止其他任务）
             if (!isTest) {
@@ -480,8 +545,8 @@ async function processTask(task, isTest = false) {
         const errorType = classifyError(error);
         logError(task.title, errorType, error, task.feed);
         
-        // 发送失败通知
-        await sendFailureNotification(task, errorType, error);
+        // 发送失败通知（通过所有 task.keys 通道）
+        await sendFailureNotification(task, errorType, error, null);
 
         return { success: false, error: error.message, errorType };
     }
